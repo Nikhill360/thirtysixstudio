@@ -50,8 +50,8 @@ function Canvas({ details }) {
         ref={canvasRef}
          className="absolute" 
          style={{
-            width: `${size * 1.4}px`,
-            height: `${size * 1.4}px`,
+            width: `${size * 1.8}px`,
+            height: `${size * 1.8}px`,
             top: `${top}%`,
             left: `${left}%`,
             zIndex: `${zIndex}`,

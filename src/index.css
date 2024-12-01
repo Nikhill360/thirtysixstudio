@@ -4,6 +4,11 @@
 
 
 body{
+   
+        margin: 0;
+        padding: 0;
+      
+      
     /* background-color: #fd2c2a; */
     background-color: black ;
 }
