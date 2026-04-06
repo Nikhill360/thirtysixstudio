@@ -1,107 +1,97 @@
-import { useEffect, useRef, useState } from "react"
-import canvasImages from "./canvasimages"
+import { useEffect, useRef, useState, useMemo } from "react"
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
+import { getCachedImage } from './hooks/useImagePreloader'
 
 function Canvas({ details }) {
-    const scale = window.devicePixelRatio
+    const scale = window.devicePixelRatio || 1;
     const { startIndex, numImages, duration, size, top, left, zIndex } = details;
     const [currentFrame, setCurrentFrame] = useState(startIndex);
     const canvasRef = useRef(null);
-    const imagesRef = useRef([]);
     const animationRef = useRef(null);
+    const [isVisible, setIsVisible] = useState(false);
+    const [isImageReady, setIsImageReady] = useState(false);
 
-    // Mouse parallax state
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
+    // Intersection Observer for performance
     useEffect(() => {
-        const handleMouseMove = (e) => {
-            const x = (e.clientX / window.innerWidth - 0.5) * 20;
-            const y = (e.clientY / window.innerHeight - 0.5) * 20;
-            setMousePos({ x, y });
-        };
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                setIsVisible(entry.isIntersecting);
+            },
+            { threshold: 0.1, rootMargin: '50% 0px' } // Pre-activate 50% early
+        );
 
-    // Preload images
-    useEffect(() => {
-        let isMounted = true;
-        const preloadImages = async () => {
-            const imagePromises = canvasImages.map((src, i) => {
-                return new Promise((resolve) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        if (isMounted) imagesRef.current[i] = img;
-                        resolve(img);
-                    };
-                    img.src = src;
-                });
-            });
-            await Promise.all(imagePromises);
-        };
-        preloadImages();
-        return () => { isMounted = false; };
+        if (canvasRef.current) observer.observe(canvasRef.current);
+        return () => observer.disconnect();
     }, []);
 
     useGSAP(() => {
-        animationRef.current = gsap.to({}, {
-            duration: duration,
-            ease: 'none',
-            repeat: -1,
-            onUpdate: function() {
-                const progress = this.progress();
-                const frameIndex = Math.floor(progress * numImages);
-                const actualIndex = (startIndex + frameIndex) % canvasImages.length;
-                setCurrentFrame(actualIndex);
-            },
-        });
+        if (!isVisible) {
+            if (animationRef.current) animationRef.current.pause();
+            return;
+        }
 
-        // Hover scale effect
-        gsap.to(canvasRef.current, {
-            scale: 1.1,
-            duration: 1,
-            repeat: -1,
-            yoyo: true,
-            ease: "power1.inOut"
-        });
-    }, [startIndex, numImages, duration]);
+        if (animationRef.current) {
+            animationRef.current.play();
+        } else {
+            animationRef.current = gsap.to({}, {
+                duration: duration,
+                ease: 'none',
+                repeat: -1,
+                onUpdate: function() {
+                    const progress = this.progress(); 
+                    const frameIndex = Math.floor(progress * numImages);
+                    const actualIndex = (startIndex + frameIndex) % 1052; // Max frames based on data
+                    setCurrentFrame(actualIndex);
+                },
+            });
+
+            gsap.to(canvasRef.current, {
+                scale: 1.05,
+                duration: 2,
+                repeat: -1,
+                yoyo: true,
+                ease: "power1.inOut"
+            });
+        }
+    }, [isVisible, startIndex, numImages, duration]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas || !isVisible) return;
 
-        const context = canvas.getContext('2d');
-        const canvasWidth = size * 1.8;
-        const canvasHeight = size * 1.8;
-        
-        canvas.width = canvasWidth * scale;
-        canvas.height = canvasHeight * scale;
-        canvas.style.width = canvasWidth + "px";
-        canvas.style.height = canvasHeight + "px";
-
-        context.scale(scale, scale);
-        context.clearRect(0, 0, canvasWidth, canvasHeight);
-
-        const currentImage = imagesRef.current[currentFrame];
-        if (currentImage) {
-            context.drawImage(currentImage, 0, 0, canvasWidth, canvasHeight);
+        const currentImage = getCachedImage(currentFrame);
+        if (!currentImage) {
+            setIsImageReady(false);
+            return;
         }
-    }, [currentFrame, size, scale]);
+
+        setIsImageReady(true);
+        const context = canvas.getContext('2d', { alpha: true });
+        const canvasWidth = size * 1.6;
+        const canvasHeight = size * 1.6;
+        
+        if (canvas.width !== canvasWidth * scale) {
+            canvas.width = canvasWidth * scale;
+            canvas.height = canvasHeight * scale;
+            canvas.style.width = canvasWidth + "px";
+            canvas.style.height = canvasHeight + "px";
+            context.scale(scale, scale);
+        }
+
+        context.clearRect(0, 0, canvasWidth, canvasHeight);
+        context.drawImage(currentImage, 0, 0, canvasWidth, canvasHeight);
+    }, [currentFrame, size, scale, isVisible]);
 
     return (
         <canvas 
-            data-scroll
-            data-scroll-speed={Math.random().toFixed(1)}
             ref={canvasRef}
-            className="absolute transition-transform duration-500 ease-out pointer-events-none" 
+            className="absolute transition-opacity duration-1000 ease-in-out pointer-events-none" 
             style={{
-                width: `${size * 1.8}px`,
-                height: `${size * 1.8}px`,
                 top: `${top}%`,
                 left: `${left}%`,
                 zIndex: `${zIndex}`,
-                transform: `translate(${mousePos.x}px, ${mousePos.y}px)`
+                opacity: (isVisible && isImageReady) ? 1 : 0
             }} 
             id="canvas"
         />
